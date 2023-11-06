@@ -39,14 +39,14 @@ public class Main {
             }
         } else {
             System.err.println("Invalid input type.");
+            scanner.close();
             return;
         }
         
-        // You may need to ask for additional parameters depending on the chosen function, such as output length, customization string, etc.
         Hash hash = new Hash();
         byte[] output = null;
 
-        // ******** Ecryption or Decryption ********
+        // ******** Hash, MAC, Encrypt, or Decrypt ********
         if(action.equals("H")){
 
             // Ask the user for the hash function to use
@@ -58,17 +58,14 @@ public class Main {
                     output = hash.computeSHA256(inputBytes);
                     break;
                 case "CSHAKE256":
-                    // cSHAKE256
-                    System.out.println("Enter the output length in bits for cSHAKE256:");
-                    int outputLength = scanner.nextInt();
-                    scanner.nextLine(); // consume the rest of the line
 
+                    // cSHAKE256
                     System.out.println("Enter the customization string (leave empty if none):");
                     String customString = scanner.nextLine();
                     byte[] customBytes = customString.getBytes();
 
                     // Empty N string for cSHAKE256
-                    output = hash.cSHAKE256(inputBytes, outputLength, new byte[0], customBytes);
+                    output = hash.cSHAKE256(inputBytes, 512, new byte[0], customBytes);
                     break;
                 default:
                     System.err.println("Invalid hash function.");
@@ -82,9 +79,9 @@ public class Main {
             }
 
         } else if(action.equals("M")){
-            // Compute an authentication tag (MAC).
-            scanner.nextLine(); // consume the rest of the line
 
+            // Compute an authentication tag (MAC).
+            System.out.println("Generating a MAC using KMACXOF256...");
             System.out.println("Enter the key (leave empty if none):");
             String keyString = scanner.nextLine();
             byte[] keyBytes = keyString.getBytes();
@@ -93,7 +90,7 @@ public class Main {
             String kmacCustomString = scanner.nextLine();
             byte[] kmacCustomBytes = kmacCustomString.getBytes();
 
-            output = hash.KMACXOF256(keyBytes, inputBytes, 256, kmacCustomBytes);
+            output = hash.KMACXOF256(keyBytes, inputBytes, 512, kmacCustomBytes);
 
         } else if(action.equals("E")) {
             System.out.println("Not implemented yet.");
