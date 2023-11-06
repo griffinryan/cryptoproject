@@ -17,27 +17,6 @@ public class Hash {
         }
     }
 
-    private byte[] leftEncode(int len) {
-        // Find out the number of bits needed to represent the length
-        int n = 1;
-        while ((1 << (8 * n)) <= len) n++;
-        byte[] encoding = new byte[n + 1];
-        encoding[0] = (byte) n; // The first byte is the length of the encoded bytes
-        for (int i = 1; i <= n; i++) {
-            encoding[i] = (byte) (len >> (8 * (n - i)));
-        }
-        return encoding;
-    }
-    
-    private byte[] encodeString(byte[] str) {
-        byte[] len = leftEncode(str.length * 8); // Length is encoded in bits
-        byte[] encoding = new byte[len.length + str.length];
-        System.arraycopy(len, 0, encoding, 0, len.length);
-        System.arraycopy(str, 0, encoding, len.length, str.length);
-        return encoding;
-    }
-    
-
     public byte[] cSHAKE256(byte[] input, int outputLength, byte[] n, byte[] s) {
         // Encode the 'n' and 's' parameters
         byte[] encodedN = encodeString(n);
@@ -100,6 +79,26 @@ public class Hash {
         rightEncoded[n + 1] = (byte) 0x80; // delimiter
         return rightEncoded;
     }
+
+    private byte[] leftEncode(int len) {
+        // Find out the number of bits needed to represent the length
+        int n = 1;
+        while ((1 << (8 * n)) <= len) n++;
+        byte[] encoding = new byte[n + 1];
+        encoding[0] = (byte) n; // The first byte is the length of the encoded bytes
+        for (int i = 1; i <= n; i++) {
+            encoding[i] = (byte) (len >> (8 * (n - i)));
+        }
+        return encoding;
+    }
+    
+    private byte[] encodeString(byte[] str) {
+        byte[] len = leftEncode(str.length * 8); // Length is encoded in bits
+        byte[] encoding = new byte[len.length + str.length];
+        System.arraycopy(len, 0, encoding, 0, len.length);
+        System.arraycopy(str, 0, encoding, len.length, str.length);
+        return encoding;
+    }
     
     // Helper method for bytepad
     private byte[] bytepad(byte[] X, int w) {
@@ -110,7 +109,6 @@ public class Hash {
         return z;
     }
     
-
     /**
      * Keccak implementation.
      * 
