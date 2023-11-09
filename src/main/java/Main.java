@@ -6,7 +6,10 @@
 import java.util.Arrays;
 import java.util.Scanner;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
 
@@ -31,13 +34,13 @@ public class Main {
         return bytes;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("Would you like to compute a (H)ash, (M)AC, (E)ncryption or (D)ecryption?");
         String action = scanner.nextLine().trim().toUpperCase();
 
-        if (!action.equals("E") && !action.equals("D")) {
+        if (!action.equals("E") && !action.equals("D") && !action.equals("H") && !action.equals("M")) {
             System.out.println("Invalid option. Please enter 'E' for encrypt or 'D' for decrypt.");
             return;
         }
@@ -50,6 +53,9 @@ public class Main {
         String inputText = "";
         String filePath = "";
         byte[] fileContent = null;
+        String kmacCustomString = "";
+        byte[] diverseContents = null;
+        String toConvString = "";
 
         if ("text".equalsIgnoreCase(inputType)) {
             System.out.println("Enter the text:");
@@ -114,7 +120,7 @@ public class Main {
             byte[] keyBytes = keyString.getBytes();
 
             System.out.println("Enter the customization string (leave empty if none):");
-            String kmacCustomString = scanner.nextLine();
+            kmacCustomString = scanner.nextLine();
             byte[] kmacCustomBytes = kmacCustomString.getBytes();
 
             output = hash.KMACXOF256(keyBytes, inputBytes, 512, kmacCustomBytes);
@@ -123,13 +129,27 @@ public class Main {
             System.out.println("Enter the passphrase:");
             String passphrase = scanner.nextLine();
 
+            System.out.println("Enter the customization string (leave empty if none):");
+            kmacCustomString = scanner.nextLine();
+            byte[] kmacCustomBytes = kmacCustomString.getBytes();
+            // Save the s.bin to grab later for decryption:
+            try {
+                FileOutputStream fos = new FileOutputStream("s.bin");
+                fos.write(kmacCustomBytes);
+                fos.close();
+            } catch (IOException e) {
+                System.err.println("Failed to save s.bin");
+                // Handle the exception as needed
+            }
+            
+            // Handle files vs. text input.
             if(inputType.equals("file")){
                 File file = new File(filePath);
                 fileContent = Files.readAllBytes(file.toPath());
                 
             } else {
-                // Else, it is user-input text...
-
+                String toByte = inputText;
+                fileContent = toByte.getBytes();
             }
             
             // Encrypt a byte array m symmetrically under passphrase pw
@@ -145,18 +165,70 @@ public class Main {
             byte[] ka = Arrays.copyOfRange(keka, keka.length / 2, keka.length);
 
             // Now you need to obtain the byte array 'm' that you want to encrypt
+            byte[] c = hash.KMACXOF256(ke, new byte[0], fileContent.length * 8, kmacCustomBytes);
+            byte[] tPrime = hash.KMACXOF256(ka, fileContent, 512, kmacCustomBytes);
 
-            byte[] diversificationStringSKE = "SKE".getBytes(); // Convert the string to a byte array
-            byte[] c = hash.KMACXOF256(ke, new byte[0], m.length * 8, diversificationStringSKE);
-
-            byte[] diversificationStringSKA = "SKA".getBytes(); // Convert the string to a byte array
-            byte[] tPrime = hash.KMACXOF256(ka, m, 512, diversificationStringSKA);
+            // Save 'z' and 'c' to files
+            Files.write(Paths.get("z.bin"), z);
+            Files.write(Paths.get("c.bin"), c);
+            Files.write(Paths.get("tPrime.bin"), tPrime);
 
             // The symmetric cryptogram is (z, c, t)
             // Now handle the symmetric cryptogram as you wish.
+            // Write 'tPrime' to a binary file
+            try {
+                Files.write(Paths.get("tPrime.bin"), tPrime);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
 
         } else if(action.equals("D")) {
-            System.out.println("Not implemented yet.");
+            // Grab diverse string
+            
+            // Load 'z', 'c', and 'tPrime' from files
+            byte[] z = Files.readAllBytes(Paths.get("z.bin"));
+            byte[] c = Files.readAllBytes(Paths.get("c.bin"));
+            byte[] tPrime = Files.readAllBytes(Paths.get("tPrime.bin"));
+
+            // Prompt the user for the passphrase
+            System.out.println("Enter the passphrase:");
+            String passphrase = scanner.nextLine();
+
+            // Derive 'ke' and 'ka' as we did in the "E" case
+            byte[] concatenated = new byte[z.length + passphrase.getBytes().length];
+            System.arraycopy(z, 0, concatenated, 0, z.length);
+            System.arraycopy(passphrase.getBytes(), 0, concatenated, z.length, passphrase.getBytes().length);
+
+            // Grab the s.bin for the diversification string
+            try {
+                Path sFilePath = Paths.get("s.bin");
+                toConvString = Files.readString(sFilePath);
+                diverseContents = Files.readAllBytes(sFilePath);
+            } catch (IOException e) {
+                System.err.println("Failed to read s.bin");
+                // Handle the exception as needed
+            }
+
+            byte[] keka = hash.KMACXOF256(concatenated, new byte[0], 1024, diverseContents);
+            byte[] ke = Arrays.copyOfRange(keka, 0, keka.length / 2);
+            byte[] ka = Arrays.copyOfRange(keka, keka.length / 2, keka.length);
+
+            // Decrypt 'c' to obtain 'm'
+            byte[] diversificationStringSKE = toConvString.getBytes();
+            byte[] m = hash.KMACXOF256(ke, new byte[0], c.length * 8, diversificationStringSKE);
+
+            // Calculate 't' for authentication
+            byte[] diversificationStringSKA = toConvString.getBytes();
+            byte[] t = hash.KMACXOF256(ka, m, 512, diversificationStringSKA);
+
+            // Compare 't' with 'tPrime' to authenticate the message
+            if (Arrays.equals(t, tPrime)) {
+                // Authentication successful, save the decrypted data as 'decrypted_file.bin'
+                Files.write(Paths.get("decrypted_file.bin"), m);
+                System.out.println("Decryption successful. The decrypted data has been saved as 'decrypted_file.bin'.");
+            } else {
+                System.err.println("Authentication failed. The data may be tampered with.");
+            }
 
         }
 
